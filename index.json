@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "id": "junk-cleaner",
+      "name": "垃圾文件清理",
+      "version": "1.0.0",
+      "description": "扫描下载目录中命中关键词过滤的广告/垃圾文件，勾选后批量删除。",
+      "author": "plsy1"
+    }
+  ]
+}
