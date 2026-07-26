@@ -2,11 +2,11 @@
   "id": "junk-cleaner",
   "name": "垃圾文件清理",
   "version": "1.0.0",
-  "description": "扫描下载目录中命中关键词过滤的广告/垃圾文件，勾选后批量删除。",
-  "author": "ecchi",
+  "description": "扫描数据目录中命中关键词过滤的无用文件，勾选后批量清理。",
+  "author": "plsy1",
   "ui": {
     "title": "垃圾文件清理",
-    "description": "在下载目录中查找文件名命中关键词过滤（qBittorrent 设置）的广告/垃圾文件。留空扫描路径则扫描默认下载目录。",
+    "description": "在配置的数据目录中查找文件名命中关键词过滤的无用文件。留空扫描路径则扫描默认目录。",
     "inputs": [
       {
         "id": "path",
@@ -21,9 +21,20 @@
       "emptyText": "未发现垃圾文件。"
     },
     "columns": [
-      { "key": "name", "label": "文件名" },
-      { "key": "relative_path", "label": "路径" },
-      { "key": "size", "label": "大小", "format": "size", "align": "right" }
+      {
+        "key": "name",
+        "label": "文件名"
+      },
+      {
+        "key": "relative_path",
+        "label": "路径"
+      },
+      {
+        "key": "size",
+        "label": "大小",
+        "format": "size",
+        "align": "right"
+      }
     ],
     "rowKey": "path",
     "bulk": {
