@@ -1,16 +1,38 @@
 {
   "id": "junk-cleaner",
   "name": "垃圾文件清理",
-  "version": "1.0.0",
-  "description": "扫描数据目录中命中关键词过滤的无用文件，勾选后批量清理。",
+  "version": "1.1.0",
+  "description": "按插件自有扫描路径，查找文件名命中关键词过滤的无用文件，勾选后批量清理。",
   "author": "plsy1",
   "ui": {
     "title": "垃圾文件清理",
-    "description": "在配置的数据目录中查找文件名命中关键词过滤的无用文件。留空扫描路径则扫描默认目录。",
+    "description": "使用插件自己保存的默认扫描路径查找垃圾文件；也可在下方临时覆盖本次扫描路径。",
+    "config": {
+      "title": "默认扫描路径",
+      "description": "每行一个目录。保存后写入本插件的 config.json，不再读取应用设置里的下载路径。",
+      "fields": [
+        {
+          "id": "scan_paths",
+          "label": "默认扫描路径",
+          "placeholder": "例如：\n/downloads\n/media/jav",
+          "type": "textarea",
+          "rows": 4
+        }
+      ],
+      "load": {
+        "endpoint": "/settings",
+        "method": "GET"
+      },
+      "save": {
+        "label": "保存路径",
+        "endpoint": "/settings",
+        "method": "POST"
+      }
+    },
     "inputs": [
       {
         "id": "path",
-        "label": "自定义扫描路径，留空则扫描下载目录"
+        "label": "临时扫描路径，留空则使用上方默认路径"
       }
     ],
     "primary": {

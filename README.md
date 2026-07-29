@@ -16,7 +16,7 @@ plsy1/odi-plugins
 
 | 插件 | 说明 |
 |---|---|
-| [junk-cleaner](junk-cleaner/) | 扫描数据目录中命中关键词过滤的无用文件，勾选后批量清理 |
+| [junk-cleaner](junk-cleaner/) | 按插件自有扫描路径，查找命中关键词过滤的无用文件并批量清理 |
 
 ## 目录结构
 

@@ -1,10 +1,13 @@
 """Junk file cleanup plugin.
 
-Scans the configured download roots (or a caller-supplied path) for files
-whose names match the qBittorrent keyword filter, and deletes the ones the
-user selects. Deletion is doubly guarded: a path must resolve inside an
-allowed root AND its filename must still match the filter, so neither
-traversal tricks nor stale paths can remove anything else.
+Scans plugin-configured roots (or a caller-supplied path) for files whose
+names match the qBittorrent keyword filter, and deletes the ones the user
+selects. Default scan paths live in this plugin's own `config.json`, not in
+the app download-path settings.
+
+Deletion is doubly guarded: a path must resolve inside an allowed root AND
+its filename must still match the filter, so neither traversal tricks nor
+stale paths can remove anything else.
 """
 
 import os
@@ -14,21 +17,32 @@ from pathlib import Path
 from fastapi import Body, HTTPException
 
 SCAN_LIMIT = 2000
+SETTINGS_KEY = "scan_paths"
 
 
 class Plugin:
     def setup(self, ctx):
         self.ctx = ctx
 
+        @ctx.router.get("/settings")
+        async def get_settings():
+            return self._public_settings()
+
+        @ctx.router.post("/settings")
+        async def save_settings(payload: dict = Body(default_factory=dict)):
+            paths = self._normalize_path_list(payload.get(SETTINGS_KEY, ""))
+            saved = self.ctx.save_settings({SETTINGS_KEY: paths})
+            return {
+                SETTINGS_KEY: self._settings_text(saved.get(SETTINGS_KEY, [])),
+                "message": "默认扫描路径已保存。",
+            }
+
         @ctx.router.post("/scan")
         async def scan(path: str = Body("", embed=True)):
             try:
                 return self._scan(path.strip() or None)
-            except ValueError:
-                raise HTTPException(
-                    status_code=422,
-                    detail="路径不存在或不是目录",
-                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
 
         @ctx.router.post("/delete")
         async def delete(
@@ -37,24 +51,43 @@ class Plugin:
         ):
             if len(paths) > SCAN_LIMIT:
                 raise HTTPException(status_code=422, detail="选择的文件过多")
-            return self._delete(paths, path.strip() or None)
+            try:
+                return self._delete(paths, path.strip() or None)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
 
-    # -- helpers ---------------------------------------------------------
-    def _keywords(self) -> list[str]:
-        raw = self.ctx.get_config("QB_KEYWORD_FILTER", [])
-        values = raw.split(",") if isinstance(raw, str) else (raw or [])
-        return [
-            str(value).strip().casefold()
-            for value in values
-            if str(value).strip()
-        ]
+    # -- settings --------------------------------------------------------
+    def _public_settings(self) -> dict:
+        settings = self.ctx.get_settings()
+        return {
+            SETTINGS_KEY: self._settings_text(settings.get(SETTINGS_KEY, []))
+        }
 
-    def _default_roots(self) -> list[Path]:
-        roots: list[Path] = []
-        for key in ("DOWNLOAD_PATH", "JAV_DOWNLOAD_PATH", "FC2_DOWNLOAD_PATH"):
-            value = str(self.ctx.get_config(key, "") or "").strip()
-            if not value:
+    def _normalize_path_list(self, raw) -> list[str]:
+        if isinstance(raw, str):
+            values = raw.replace(",", "\n").splitlines()
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            values = []
+
+        paths: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            text = str(value or "").strip()
+            if not text or text in seen:
                 continue
+            seen.add(text)
+            paths.append(text)
+        return paths
+
+    def _settings_text(self, raw) -> str:
+        return "\n".join(self._normalize_path_list(raw))
+
+    def _configured_roots(self) -> list[Path]:
+        settings = self.ctx.get_settings()
+        roots: list[Path] = []
+        for value in self._normalize_path_list(settings.get(SETTINGS_KEY, [])):
             try:
                 resolved = Path(value).expanduser().resolve()
             except OSError:
@@ -74,18 +107,34 @@ class Plugin:
         try:
             resolved = Path(path_value).expanduser().resolve()
         except OSError as exc:
-            raise ValueError("invalid path") from exc
+            raise ValueError("路径无效") from exc
         if not resolved.is_dir():
-            raise ValueError("not a directory")
+            raise ValueError("路径不存在或不是目录")
         return resolved
+
+    def _scan_roots(self, custom_path: str | None) -> list[Path]:
+        if custom_path:
+            return [self._custom_root(custom_path)]
+        roots = self._configured_roots()
+        if not roots:
+            raise ValueError(
+                "未配置默认扫描路径，请先在插件设置中填写并保存。"
+            )
+        return roots
+
+    # -- helpers ---------------------------------------------------------
+    def _keywords(self) -> list[str]:
+        raw = self.ctx.get_config("QB_KEYWORD_FILTER", [])
+        values = raw.split(",") if isinstance(raw, str) else (raw or [])
+        return [
+            str(value).strip().casefold()
+            for value in values
+            if str(value).strip()
+        ]
 
     def _scan(self, custom_path: str | None) -> dict:
         keywords = self._keywords()
-        roots = (
-            [self._custom_root(custom_path)]
-            if custom_path
-            else self._default_roots()
-        )
+        roots = self._scan_roots(custom_path)
 
         items: list[dict] = []
         truncated = False
@@ -137,14 +186,17 @@ class Plugin:
 
     def _delete(self, paths: list[str], custom_path: str | None) -> dict:
         keywords = self._keywords()
-        roots = self._default_roots()
+        # Deletion is only allowed under the same roots the plugin would
+        # scan: saved defaults, plus an optional temporary override path.
+        roots = list(self._configured_roots())
         if custom_path:
-            try:
-                custom_root = self._custom_root(custom_path)
-            except ValueError:
-                custom_root = None
-            if custom_root is not None and custom_root not in roots:
+            custom_root = self._custom_root(custom_path)
+            if custom_root not in roots:
                 roots.append(custom_root)
+        if not roots:
+            raise ValueError(
+                "未配置默认扫描路径，请先在插件设置中填写并保存。"
+            )
 
         deleted: list[str] = []
         failed: list[dict] = []
@@ -157,7 +209,7 @@ class Plugin:
                 continue
             if not any(resolved.is_relative_to(root) for root in roots):
                 failed.append(
-                    {"path": display, "reason": "outside download roots"}
+                    {"path": display, "reason": "outside configured roots"}
                 )
                 continue
             if not resolved.is_file():
