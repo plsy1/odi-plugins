@@ -1,9 +1,9 @@
 """Junk file cleanup plugin.
 
 Scans plugin-configured roots (or a caller-supplied path) for files whose
-names match the qBittorrent keyword filter, and deletes the ones the user
-selects. Default scan paths live in this plugin's own `config.json`, not in
-the app download-path settings.
+names match the plugin's own keywords, and deletes the ones the user selects.
+Both scan paths and keywords live in this plugin's `config.json` and are
+independent of the application's download settings.
 
 Deletion is doubly guarded: a path must resolve inside an allowed root AND
 its filename must still match the filter, so neither traversal tricks nor
@@ -18,6 +18,7 @@ from fastapi import Body, HTTPException
 
 SCAN_LIMIT = 2000
 SETTINGS_KEY = "scan_paths"
+KEYWORDS_KEY = "keywords"
 
 
 class Plugin:
@@ -30,11 +31,17 @@ class Plugin:
 
         @ctx.router.post("/settings")
         async def save_settings(payload: dict = Body(default_factory=dict)):
-            paths = self._normalize_path_list(payload.get(SETTINGS_KEY, ""))
-            saved = self.ctx.save_settings({SETTINGS_KEY: paths})
+            settings = self.ctx.get_settings()
+            for key, normalize in (
+                (SETTINGS_KEY, self._normalize_path_list),
+                (KEYWORDS_KEY, self._normalize_keywords),
+            ):
+                if key in payload:
+                    settings[key] = normalize(payload[key])
+            self.ctx.save_settings(settings)
             return {
-                SETTINGS_KEY: self._settings_text(saved.get(SETTINGS_KEY, [])),
-                "message": "默认扫描路径已保存。",
+                **self._public_settings(),
+                "message": "清理设置已保存。",
             }
 
         @ctx.router.post("/scan")
@@ -60,8 +67,28 @@ class Plugin:
     def _public_settings(self) -> dict:
         settings = self.ctx.get_settings()
         return {
-            SETTINGS_KEY: self._settings_text(settings.get(SETTINGS_KEY, []))
+            SETTINGS_KEY: self._settings_text(settings.get(SETTINGS_KEY, [])),
+            KEYWORDS_KEY: "\n".join(
+                self._normalize_keywords(settings.get(KEYWORDS_KEY, []))
+            ),
         }
+
+    def _normalize_keywords(self, raw) -> list[str]:
+        if isinstance(raw, str):
+            values = raw.replace("，", ",").replace(",", "\n").splitlines()
+        elif isinstance(raw, (list, tuple)):
+            values = raw
+        else:
+            values = []
+        keywords: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            keyword = str(value or "").strip()
+            normalized = keyword.casefold()
+            if keyword and normalized not in seen:
+                seen.add(normalized)
+                keywords.append(keyword)
+        return keywords
 
     def _normalize_path_list(self, raw) -> list[str]:
         if isinstance(raw, str):
@@ -124,12 +151,10 @@ class Plugin:
 
     # -- helpers ---------------------------------------------------------
     def _keywords(self) -> list[str]:
-        raw = self.ctx.get_config("QB_KEYWORD_FILTER", [])
-        values = raw.split(",") if isinstance(raw, str) else (raw or [])
+        settings = self.ctx.get_settings()
         return [
-            str(value).strip().casefold()
-            for value in values
-            if str(value).strip()
+            keyword.casefold()
+            for keyword in self._normalize_keywords(settings.get(KEYWORDS_KEY, []))
         ]
 
     def _scan(self, custom_path: str | None) -> dict:
@@ -176,7 +201,7 @@ class Plugin:
         items.sort(key=lambda item: item["size"], reverse=True)
         message = None
         if not keywords:
-            message = "未配置关键词过滤，请先在「服务连接 → qBittorrent」中设置。"
+            message = "未配置清理关键词，请先在本插件的「清理设置」中填写并保存。"
         elif truncated:
             message = f"结果过多，仅显示前 {SCAN_LIMIT} 条。"
         elif roots:
@@ -186,6 +211,8 @@ class Plugin:
 
     def _delete(self, paths: list[str], custom_path: str | None) -> dict:
         keywords = self._keywords()
+        if not keywords:
+            raise ValueError("未配置清理关键词，请先在本插件的「清理设置」中填写并保存。")
         # Deletion is only allowed under the same roots the plugin would
         # scan: saved defaults, plus an optional temporary override path.
         roots = list(self._configured_roots())

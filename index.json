@@ -3,8 +3,8 @@
     {
       "id": "junk-cleaner",
       "name": "垃圾文件清理",
-      "version": "1.1.0",
-      "description": "按插件自有扫描路径，查找文件名命中关键词过滤的无用文件，勾选后批量清理。",
+      "version": "1.2.0",
+      "description": "按插件独立配置的路径和关键词扫描文件，勾选确认后批量清理。",
       "author": "plsy1"
     }
   ]
