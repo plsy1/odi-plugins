@@ -1,0 +1,45 @@
+{
+  "registry_version": 2,
+  "plugins": [
+    {
+      "id": "junk-cleaner",
+      "name": "垃圾文件清理",
+      "description": "按插件独立关键词扫描，确认所选后清理；支持后台进度、取消和文件变化校验。",
+      "author": "plsy1",
+      "releases": [
+        {
+          "version": "2.0.0",
+          "api_version": 1,
+          "requires_host": ">=1.2.1,<2",
+          "download_url": "https://github.com/plsy1/odi-plugins/releases/download/junk-cleaner-v2.0.0/junk-cleaner-2.0.0.zip",
+          "sha256": "3927dd76607b131bde71852ec3e694fe73e177e5d30b3ebc326cc785e61f2c4e",
+          "release_notes": "迁移至 SDK1：旧配置迁移、可取消的后台扫描与清理、分页候选和删除前文件校验。"
+        },
+        {
+          "version": "1.2.0",
+          "api_version": 0,
+          "requires_host": "<1.2.1",
+          "download_url": "https://github.com/plsy1/odi-plugins/releases/download/junk-cleaner-v1.2.0/junk-cleaner-1.2.0.zip",
+          "sha256": "d15a82ec8956be8cbcd3e26b66478ac98347fedda1bda06581e476f3a2e8c651",
+          "release_notes": "Legacy 1.2.0 兼容包；独立路径与关键词配置。"
+        }
+      ]
+    },
+    {
+      "id": "cloud-strm",
+      "name": "云盘 STRM",
+      "description": "扫描 CD2 等挂载目录，按 Nginx 路径规则生成 STRM，支持配套文件、增量扫描和 Emby 刷新。",
+      "author": "plsy1",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "api_version": 1,
+          "requires_host": ">=1.2.1,<2",
+          "download_url": "https://github.com/plsy1/odi-plugins/releases/download/cloud-strm-v1.0.0/cloud-strm-1.0.0.zip",
+          "sha256": "624a0f046b155d8b79e4033f2cfa1d8d4d901cebef3dc628af2e4528e28e71bc",
+          "release_notes": "CD2 挂载目录生成 STRM，支持路径映射、增量生成、配套文件和 Emby 刷新。"
+        }
+      ]
+    }
+  ]
+}

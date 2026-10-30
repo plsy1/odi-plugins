@@ -16,7 +16,7 @@ plsy1/odi-plugins
 
 | 插件 | 说明 |
 |---|---|
-| [cloud-strm](cloud-strm/) | CD2 挂载目录生成 STRM，支持 Nginx 路径映射、配套文件与 Emby 刷新（需 Kanojo 1.2.1；当前可本地安装） |
+| [cloud-strm](cloud-strm/) | CD2 挂载目录生成 STRM，支持 Nginx 路径映射、配套文件与 Emby 刷新（需 Kanojo 1.2.1） |
 | [junk-cleaner](junk-cleaner/) | SDK1 后台扫描、分页确认与清理，独立关键词，支持旧配置迁移（需 Kanojo 1.2.1） |
 
 垃圾文件清理 2.0.0 使用 SDK1，需要 Kanojo 1.2.1 或更新版本。路径和关键词在插件的「清理设置」中独立保存，与 qBittorrent 的下载过滤互不影响。升级时迁移旧插件配置；缺失的清理关键词保持为空，不读取下载器过滤词。扫描与删除都有后台进度和取消功能，候选文件按页展示，勾选确认后才会删除。详情见 [垃圾文件清理](junk-cleaner/README.md)。
