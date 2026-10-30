@@ -1,78 +1,103 @@
 {
   "id": "junk-cleaner",
   "name": "垃圾文件清理",
-  "version": "1.2.0",
-  "description": "按插件独立配置的路径和关键词扫描文件，勾选确认后批量清理。",
+  "version": "2.0.0",
+  "api_version": 1,
+  "requires_host": ">=1.2.1,<2",
+  "data_version": 1,
   "author": "plsy1",
+  "description": "按插件独立关键词扫描，确认所选后清理；支持后台进度、取消和文件变化校验。",
+  "capabilities": [],
+  "settings": {
+    "fields": [
+      {
+        "id": "scan_paths",
+        "type": "string_list",
+        "label": "默认扫描路径",
+        "description": "每行一个服务端绝对路径，多个目录会去重。",
+        "default": [],
+        "max_length": 100
+      },
+      {
+        "id": "keywords",
+        "type": "string_list",
+        "label": "清理关键词",
+        "description": "使用本插件自己的关键词，每行一个，也支持中英文逗号分隔；文件名包含任意关键词即匹配，不区分大小写。留空无法清理。",
+        "default": [],
+        "max_length": 500
+      }
+    ]
+  },
   "ui": {
+    "schema_version": 1,
     "title": "垃圾文件清理",
-    "description": "按本插件保存的清理关键词匹配文件名，扫描后勾选确认删除；也可临时覆盖本次扫描路径。",
-    "config": {
-      "title": "清理设置",
-      "description": "路径和关键词均独立保存在本插件中。文件名包含任意关键词即命中，不区分大小写；关键词留空时不清理。",
-      "fields": [
-        {
-          "id": "scan_paths",
-          "label": "默认扫描路径",
-          "placeholder": "例如：\n/downloads\n/media/jav",
-          "type": "textarea",
-          "rows": 4
-        },
-        {
-          "id": "keywords",
-          "label": "清理关键词",
-          "placeholder": "每行一个关键词，也可用逗号分隔，例如：\n游戏大全\n广告",
-          "type": "textarea",
-          "rows": 4
+    "description": "扫描只读取文件信息。勾选候选文件并确认后才会删除；设置变化、文件被替换或重启后，需要重新核对。",
+    "sections": [
+      {
+        "type": "settings",
+        "title": "清理设置",
+        "fields": [
+          "scan_paths",
+          "keywords"
+        ]
+      },
+      {
+        "type": "action",
+        "id": "scan",
+        "title": "扫描文件",
+        "label": "开始扫描",
+        "endpoint": "/scan",
+        "inputs": [
+          {
+            "id": "path",
+            "type": "string",
+            "label": "临时扫描路径",
+            "description": "留空使用已保存的默认路径。",
+            "default": "",
+            "max_length": 4096
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "id": "candidates",
+        "title": "候选文件",
+        "description": "仅显示最近一次完成的扫描，按大小排序，每页 30 项。删除前会再次核对当前设置与文件信息。",
+        "endpoint": "/candidates",
+        "columns": [
+          {
+            "key": "name",
+            "label": "文件名"
+          },
+          {
+            "key": "relative_path",
+            "label": "相对路径"
+          },
+          {
+            "key": "root",
+            "label": "扫描目录"
+          },
+          {
+            "key": "size",
+            "label": "大小",
+            "format": "size"
+          },
+          {
+            "key": "error",
+            "label": "跳过原因"
+          }
+        ],
+        "bulk": {
+          "label": "删除所选",
+          "endpoint": "/delete",
+          "confirm": "确定永久删除本页勾选的文件？此操作不可恢复。只会清理扫描记录中未发生变化、仍匹配当前关键词的普通文件。"
         }
-      ],
-      "load": {
-        "endpoint": "/settings",
-        "method": "GET"
-      },
-      "save": {
-        "label": "保存设置",
-        "endpoint": "/settings",
-        "method": "POST"
-      }
-    },
-    "inputs": [
-      {
-        "id": "path",
-        "label": "临时扫描路径，留空则使用上方默认路径"
-      }
-    ],
-    "primary": {
-      "label": "扫描",
-      "endpoint": "/scan",
-      "method": "POST",
-      "itemsKey": "items",
-      "emptyText": "未发现垃圾文件。"
-    },
-    "columns": [
-      {
-        "key": "name",
-        "label": "文件名"
       },
       {
-        "key": "relative_path",
-        "label": "路径"
-      },
-      {
-        "key": "size",
-        "label": "大小",
-        "format": "size",
-        "align": "right"
+        "type": "task_status",
+        "id": "tasks",
+        "title": "扫描与清理任务"
       }
-    ],
-    "rowKey": "path",
-    "bulk": {
-      "label": "删除所选",
-      "endpoint": "/delete",
-      "method": "POST",
-      "field": "paths",
-      "confirm": "确定删除选中的文件？此操作不可恢复。",
-      "color": "warn"
-    }
+    ]
   }
 }

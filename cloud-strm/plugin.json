@@ -1,0 +1,328 @@
+{
+  "id": "cloud-strm",
+  "name": "云盘 STRM",
+  "version": "1.0.0",
+  "api_version": 1,
+  "requires_host": ">=1.2.1,<2",
+  "data_version": 1,
+  "author": "plsy1",
+  "description": "扫描 CD2 等挂载目录，按 Nginx 路径规则生成 STRM，支持配套文件、增量扫描和 Emby 刷新。",
+  "capabilities": [
+    "library.refresh"
+  ],
+  "settings": {
+    "fields": [
+      {
+        "id": "auto_scan",
+        "type": "boolean",
+        "label": "定时扫描",
+        "default": false,
+        "description": "按检查间隔扫描挂载目录，跳过未变更文件。"
+      },
+      {
+        "id": "poll_seconds",
+        "type": "integer",
+        "label": "检查间隔（秒）",
+        "default": 300,
+        "minimum": 60,
+        "maximum": 86400
+      },
+      {
+        "id": "scan_on_start",
+        "type": "boolean",
+        "label": "插件启用后扫描一次",
+        "default": false
+      },
+      {
+        "id": "video_extensions",
+        "type": "string_list",
+        "label": "视频扩展名",
+        "default": [
+          "mkv",
+          "mp4",
+          "avi",
+          "ts",
+          "m2ts",
+          "mov",
+          "wmv",
+          "iso"
+        ],
+        "max_length": 40
+      },
+      {
+        "id": "copy_subtitles",
+        "type": "boolean",
+        "label": "复制字幕",
+        "default": true
+      },
+      {
+        "id": "copy_nfo",
+        "type": "boolean",
+        "label": "复制 NFO",
+        "default": true
+      },
+      {
+        "id": "copy_images",
+        "type": "boolean",
+        "label": "复制海报和图片",
+        "default": false
+      },
+      {
+        "id": "metadata_max_mb",
+        "type": "integer",
+        "label": "单个配套文件大小上限（MB）",
+        "default": 20,
+        "minimum": 1,
+        "maximum": 64
+      },
+      {
+        "id": "refresh_emby",
+        "type": "boolean",
+        "label": "生成后通知 Emby 刷新",
+        "default": false,
+        "description": "使用主程序配置的 Emby 地址；目录映射中填写 Emby 实际看到的 STRM 输出目录。刷新失败可以重试。"
+      }
+    ]
+  },
+  "ui": {
+    "schema_version": 1,
+    "description": "将 CD2 的 115 目录挂载到 Kanojo 后添加映射。源视频保持原样；播放时由现有 Nginx/OpenList 链路取得 115 直链。",
+    "sections": [
+      {
+        "type": "settings",
+        "title": "扫描与配套文件",
+        "fields": [
+          "auto_scan",
+          "poll_seconds",
+          "scan_on_start",
+          "video_extensions",
+          "copy_subtitles",
+          "copy_nfo",
+          "copy_images",
+          "metadata_max_mb",
+          "refresh_emby"
+        ]
+      },
+      {
+        "type": "table",
+        "id": "rules",
+        "title": "目录映射",
+        "endpoint": "/rules",
+        "columns": [
+          {
+            "key": "name",
+            "label": "名称"
+          },
+          {
+            "key": "source_dir",
+            "label": "源目录"
+          },
+          {
+            "key": "target_dir",
+            "label": "STRM 目录"
+          },
+          {
+            "key": "preview",
+            "label": "STRM 内容示例"
+          }
+        ],
+        "actions": [
+          {
+            "label": "编辑",
+            "fill_form": "mapping"
+          },
+          {
+            "label": "扫描",
+            "endpoint": "/rules/scan"
+          },
+          {
+            "label": "移除",
+            "endpoint": "/rules/remove",
+            "confirm": "移除此目录映射？已生成的 STRM 和源视频都会保留。"
+          }
+        ]
+      },
+      {
+        "type": "action",
+        "id": "mapping",
+        "title": "添加或编辑映射",
+        "label": "保存目录映射",
+        "reset_label": "新建映射",
+        "endpoint": "/rules",
+        "inputs": [
+          {
+            "id": "name",
+            "type": "string",
+            "label": "映射名称",
+            "required": true,
+            "max_length": 80,
+            "description": "例如 115 电影。"
+          },
+          {
+            "id": "source_dir",
+            "type": "string",
+            "label": "CD2 源目录（Kanojo 内）",
+            "required": true,
+            "description": "挂载到 Kanojo 容器中的目录，例如 /cloud/115/电影。"
+          },
+          {
+            "id": "target_dir",
+            "type": "string",
+            "label": "STRM 输出目录（Kanojo 内）",
+            "required": true,
+            "description": "例如 /strm/电影，保持原有文件夹结构。"
+          },
+          {
+            "id": "mode",
+            "type": "enum",
+            "label": "STRM 内容格式",
+            "options": [
+              "路径",
+              "URL",
+              "模板"
+            ],
+            "default": "路径"
+          },
+          {
+            "id": "playback_root",
+            "type": "string",
+            "label": "STRM 内容前缀或模板",
+            "default": "/115",
+            "required": true,
+            "description": "填写 Nginx 识别的路径前缀，例如 /115/电影。URL 模式可填 https://openlist.example/d/115/电影；模板支持 {path}、{url_path}、{encoded_path}。"
+          },
+          {
+            "id": "emby_root",
+            "type": "string",
+            "label": "STRM 输出目录（Emby 内，可留空）",
+            "default": "",
+            "description": "仅用于通知 Emby 刷新，例如 /media/电影。留空表示与 Kanojo 的输出目录一致。"
+          },
+          {
+            "id": "enabled",
+            "type": "boolean",
+            "label": "启用此映射",
+            "default": true
+          }
+        ]
+      },
+      {
+        "type": "action",
+        "id": "scan",
+        "title": "开始生成",
+        "description": "增量扫描会检查全部目录并跳过未变更文件；源目录不可用时保留已有输出和记录。",
+        "label": "增量扫描",
+        "endpoint": "/scan"
+      },
+      {
+        "type": "action",
+        "id": "rebuild",
+        "label": "重新检查全部文件",
+        "endpoint": "/rebuild",
+        "description": "修复缺失 STRM、应用新的路径规则。手工修改或其他程序生成的文件会保留。"
+      },
+      {
+        "type": "task_status",
+        "id": "tasks",
+        "title": "任务进度"
+      },
+      {
+        "type": "table",
+        "id": "records",
+        "title": "生成记录",
+        "endpoint": "/records",
+        "columns": [
+          {
+            "key": "rule",
+            "label": "映射"
+          },
+          {
+            "key": "title",
+            "label": "源文件"
+          },
+          {
+            "key": "state",
+            "label": "状态",
+            "format": "status"
+          },
+          {
+            "key": "error",
+            "label": "详情"
+          }
+        ],
+        "actions": [
+          {
+            "label": "重新检查",
+            "endpoint": "/retry"
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "id": "runs",
+        "title": "最近扫描",
+        "endpoint": "/runs",
+        "columns": [
+          {
+            "key": "started_at",
+            "label": "时间",
+            "format": "datetime"
+          },
+          {
+            "key": "state",
+            "label": "状态",
+            "format": "status"
+          },
+          {
+            "key": "created",
+            "label": "新增"
+          },
+          {
+            "key": "updated",
+            "label": "更新"
+          },
+          {
+            "key": "skipped",
+            "label": "跳过"
+          },
+          {
+            "key": "failed",
+            "label": "失败"
+          },
+          {
+            "key": "error",
+            "label": "详情"
+          }
+        ]
+      },
+      {
+        "type": "action",
+        "id": "refresh",
+        "title": "Emby 刷新重试",
+        "label": "重试待刷新文件",
+        "endpoint": "/refresh"
+      },
+      {
+        "type": "table",
+        "id": "pending",
+        "title": "待刷新记录",
+        "endpoint": "/refresh",
+        "columns": [
+          {
+            "key": "path",
+            "label": "Emby 内路径"
+          },
+          {
+            "key": "state",
+            "label": "状态",
+            "format": "status"
+          },
+          {
+            "key": "error",
+            "label": "详情"
+          }
+        ]
+      }
+    ]
+  }
+}

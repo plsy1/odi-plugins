@@ -5,7 +5,8 @@
       "name": "垃圾文件清理",
       "version": "1.2.0",
       "description": "按插件独立配置的路径和关键词扫描文件，勾选确认后批量清理。",
-      "author": "plsy1"
+      "author": "plsy1",
+      "download_url": "https://github.com/plsy1/odi-plugins/archive/68eb55c64d7ca1a261d58d47996c667c958da5a3.zip"
     }
   ]
 }
