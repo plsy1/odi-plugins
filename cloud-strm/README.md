@@ -1,6 +1,6 @@
 # 云盘 STRM
 
-Kanojo SDK1 插件，需宿主 **1.2.1 或更新版本**。将 CD2 的 115 目录挂载到 Kanojo，插件扫描目录并在独立位置生成 STRM，保留原有文件夹结构。STRM 内容按你现有 Nginx 规则生成；播放时继续由 Emby → Nginx → OpenList 获取 115 直链并返回 302。
+Kanojo SDK1 插件，需宿主 **1.2.2 或更新版本**。将 CD2 的 115 目录挂载到 Kanojo，插件扫描目录并在独立位置生成 STRM，保留原有文件夹结构。STRM 内容按你现有 Nginx 规则生成；播放时继续由 Emby → Nginx → OpenList 获取 115 直链并返回 302。
 
 ## 三种路径分别填什么
 
@@ -33,6 +33,17 @@ Emby 容器可以把 `/mnt/strm` 挂载为 `/media`。
 ```
 
 导入 Emby 的是 STRM 输出目录。STRM 路径前缀按你已有、能正常播放的 Nginx 映射填写；它可以与 Kanojo 和 Emby 内的目录名不同。保存后目录表会显示内容示例。
+
+## 界面与组件
+
+1.0.1 使用宿主 SDK 的页签、表单分组、开关卡片、操作区、表格和任务面板：
+
+- **目录映射**：目录位置、播放规则及已保存的映射。
+- **生成设置**：扫描策略与配套文件设置。
+- **生成与记录**：扫描操作、进度、生成记录与最近扫描。
+- **Emby 刷新**：刷新开关、失败重试与待刷新记录。
+
+切换页签保留未保存的内容。新版界面需要 Kanojo 1.2.2；已发布的 1.0.0 仍兼容 Kanojo 1.2.1。
 
 ## 设置和操作
 
@@ -77,6 +88,8 @@ PYTHONPATH=/path/to/kanojo/backend /path/to/kanojo/venv/bin/python -m unittest d
 PYTHONPATH=/path/to/kanojo/backend /path/to/kanojo/venv/bin/python tools/package_sdk.py cloud-strm
 ```
 
-打包器生成 `dist/cloud-strm-1.0.0.zip`、SHA-256 和 v2 release 索引片段，结果可重复，不自动发布。正式发布时先上传固定版本的 Release 资产，验证后再合并 v2 索引；旧 index.json 保留固定版本的 Legacy 插件供旧宿主使用。
+打包器生成 `dist/cloud-strm-1.0.1.zip`、SHA-256 和 v2 release 索引片段，结果可重复，不自动发布。正式发布时先上传固定版本的 Release 资产，验证后再合并 v2 索引；旧 index.json 保留固定版本的 Legacy 插件供旧宿主使用。
 
 实现独立编写，功能设计参考 MoviePilot 云盘 STRM 插件；无需安装 MoviePilot。
+
+扫描按目录枚举文件名，提前过滤未启用的类型，每批最多处理 100 个文件；已有记录批量读取。扫描途中挂载失效时，保留已生成内容和原有索引，任务标记失败后可重试。

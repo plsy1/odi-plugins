@@ -173,6 +173,56 @@ class CloudStrmTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(list(self.source.glob('*.mkv'))),20)
         self.assertEqual((await self.ctx.tasks.get(ref.task_id))['status'],'cancelled')
 
+    async def test_directory_batches_generate_before_later_directory_is_enumerated(self):
+        self.video('first.mkv')
+        self.video('later/second.mkv')
+        original = module.files.list_folder
+        def listing(root, relative, extensions):
+            if relative == 'later':
+                self.assertTrue((self.output/'first.strm').exists())
+            return original(root, relative, extensions)
+        with patch.object(module.files, 'list_folder', side_effect=listing):
+            self.assertEqual((await self.scan())['created'], 2)
+
+    async def test_later_mount_error_preserves_completed_outputs_and_existing_records(self):
+        self.video('first.mkv'); self.video('later/second.mkv')
+        await self.scan()
+        before = {e.key: e.value for e in (await self.ctx.store.scan('records')).items}
+        self.video('another.mkv')
+        original = module.files.list_folder
+        def listing(root, relative, extensions):
+            if relative == 'later': raise OSError('mount unavailable')
+            return original(root, relative, extensions)
+        with patch.object(module.files, 'list_folder', side_effect=listing), self.assertRaises(OperationFailed):
+            await self.scan()
+        self.assertTrue((self.output/'another.strm').exists())
+        self.assertTrue((self.output/'later/second.strm').exists())
+        after = {e.key: e.value for e in (await self.ctx.store.scan('records')).items}
+        for key in before: self.assertEqual(after[key], before[key])
+
+    async def test_batches_bound_metadata_and_bulk_queries_and_filter_unused_files(self):
+        for index in range(205): self.video(f'{index:03d}.mkv')
+        self.video('ignored.txt'); self.video('ignored.jpg')
+        original_stat = Path.lstat
+        def lstat(path, *args, **kwargs):
+            self.assertNotIn(path.name, {'ignored.txt', 'ignored.jpg'})
+            return original_stat(path, *args, **kwargs)
+        with patch.object(module.files, 'stat_batch', wraps=module.files.stat_batch) as batches, \
+             patch.object(self.ctx.store, 'get_many', wraps=self.ctx.store.get_many) as queries, \
+             patch.object(Path, 'lstat', lstat):
+            self.assertEqual((await self.scan())['created'], 205)
+            self.assertEqual([len(call.args[1]) for call in batches.call_args_list], [100, 100, 5])
+            self.assertEqual(queries.await_count, 6)
+            self.assertTrue(all(len(call.args[1]) <= 100 for call in queries.call_args_list))
+        with patch.object(module.files, 'atomic_write') as write:
+            self.assertEqual((await self.scan())['skipped'], 205)
+            write.assert_not_called()
+
+    async def test_folder_limit_counts_ignored_entries_too(self):
+        for index in range(3): self.video(f'{index}.txt')
+        with patch.object(module.files, 'MAX_FOLDER_ITEMS', 2), self.assertRaises(OperationFailed):
+            await self.scan()
+
 
 class MappingTests(unittest.TestCase):
     def rule(self,**values): return Mapping(name='demo',source_dir='/mnt/115',target_dir='/strm',**values)
@@ -186,7 +236,7 @@ class MappingTests(unittest.TestCase):
             with self.subTest(values=values),self.assertRaises(ValueError): Mapping(name='demo',**{'source_dir':'/mnt/115','target_dir':'/strm',**values})
     def test_manifest_matches_sdk_contract(self):
         from kanojo_sdk.manifest import Manifest
-        Manifest.model_validate(MANIFEST).check_host('1.2.1')
+        Manifest.model_validate(MANIFEST).check_host('1.2.2')
 
 
 class PackagingTests(unittest.TestCase):

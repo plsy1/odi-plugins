@@ -110,47 +110,55 @@ class Plugin(BasePlugin):
         if not self._run_lock.locked() and any(rule.enabled for rule in await self.all_rules()):
             await self.submit(ScanInput())
 
-    async def inventory(self, rule, task, record=None):
+    async def inventory(self, rule, task, kinds, record=None):
         if record:
             relative = clean_relative(record['relative'])
-            def stat_one():
-                path = files.output_path(rule.source_dir, relative)
-                info = path.stat()
-                if not path.is_file(): raise ValueError('源文件不是普通文件')
-                return files.Entry(relative, info.st_size, info.st_mtime_ns)
-            return [await self.ctx.run_io(stat_one)]
-        pending, items = deque(['']), []
+            yield await self.ctx.run_io(files.stat_batch, rule.source_dir, [relative])
+            return
+        pending, examined = deque(['']), 0
         while pending:
             task.check_cancelled()
-            folders, entries = await self.ctx.run_io(files.list_folder, rule.source_dir, pending.popleft())
-            pending.extend(folders); items.extend(entries)
-            if len(items) + len(pending) > 200000:
+            folders, names, count = await self.ctx.run_io(files.list_folder, rule.source_dir, pending.popleft(), kinds)
+            examined += count
+            if examined > files.MAX_SCAN_ITEMS:
                 raise ValueError('目录项目超过 200000，请拆分映射范围')
-        return items
+            pending.extend(folders)
+            for offset in range(0, len(names), files.SCAN_BATCH_SIZE):
+                task.check_cancelled()
+                yield await self.ctx.run_io(files.stat_batch, rule.source_dir, names[offset:offset + files.SCAN_BATCH_SIZE])
+
+    @staticmethod
+    def file_types(settings):
+        kinds = {'.' + ext.strip().lstrip('.').casefold(): 'video' for ext in settings['video_extensions']}
+        metadata = set()
+        if settings['copy_subtitles']: metadata.update({'.srt','.ass','.ssa','.sub','.idx','.vtt','.sup'})
+        if settings['copy_nfo']: metadata.add('.nfo')
+        if settings['copy_images']: metadata.update({'.jpg','.jpeg','.png','.webp'})
+        for suffix in metadata: kinds.setdefault(suffix, 'metadata')
+        return kinds
 
     @staticmethod
     def file_kind(relative, settings):
-        suffix = PurePosixPath(relative).suffix.casefold()
-        if suffix in {'.' + ext.strip().lstrip('.').casefold() for ext in settings['video_extensions']}:
-            return 'video'
-        if settings['copy_subtitles'] and suffix in {'.srt','.ass','.ssa','.sub','.idx','.vtt','.sup'}: return 'metadata'
-        if settings['copy_nfo'] and suffix == '.nfo': return 'metadata'
-        if settings['copy_images'] and suffix in {'.jpg','.jpeg','.png','.webp'}: return 'metadata'
-        return None
+        return Plugin.file_types(settings).get(PurePosixPath(relative).suffix.casefold())
 
-    async def process(self, rule, entry, settings, force=False):
-        relative, kind = entry.relative, self.file_kind(entry.relative, settings)
+    async def process(self, rule, entry, settings, force=False, *, stored=None, kinds=None, rule_digest=None):
+        relative = entry.relative
+        kind = (kinds if kinds is not None else self.file_types(settings)).get(PurePosixPath(relative).suffix.casefold())
         if not kind: return 'ignored'
         key = key_for(rule.id, relative)
-        previous = await self.ctx.store.get('records', key) or {}
-        intent = await self.ctx.store.get('intents', key) or {}
+        if stored is None:
+            previous = await self.ctx.store.get('records', key) or {}
+            intent = await self.ctx.store.get('intents', key) or {}
+        else:
+            previous, intent = stored
+        rule_digest = rule_digest or rule.digest
         destination = str(PurePosixPath(relative).with_suffix('.strm')) if kind == 'video' else relative
         maximum = settings['metadata_max_mb'] * 1024 * 1024 if kind != 'video' else 16384
-        record = dict(rule_id=rule.id, rule=rule.name, relative=relative, title=relative, destination=str(Path(rule.target_dir)/destination), observed_at=timestamp(), state='completed', error='', fingerprint=entry.fingerprint, rule_digest=rule.digest, owned=False)
+        record = dict(rule_id=rule.id, rule=rule.name, relative=relative, title=relative, destination=str(Path(rule.target_dir)/destination), observed_at=timestamp(), state='completed', error='', fingerprint=entry.fingerprint, rule_digest=rule_digest, owned=False)
         try:
             output = await self.ctx.run_io(files.output_path, rule.target_dir, destination)
             old_hash = await self.ctx.run_io(files.digest, output, maximum)
-            if kind == 'metadata' and not force and not intent and previous.get('fingerprint') == entry.fingerprint and previous.get('rule_digest') == rule.digest and previous.get('content_hash') == old_hash and old_hash and (not settings['refresh_emby'] or previous.get('refresh_requested')):
+            if kind == 'metadata' and not force and not intent and previous.get('fingerprint') == entry.fingerprint and previous.get('rule_digest') == rule_digest and previous.get('content_hash') == old_hash and old_hash and (not settings['refresh_emby'] or previous.get('refresh_requested')):
                 return 'skipped'
             if kind == 'video':
                 data = rule.content(relative).encode('utf-8')
@@ -158,7 +166,7 @@ class Plugin(BasePlugin):
             else:
                 data = await self.ctx.run_io(files.read_metadata, rule.source_dir, relative, maximum)
             new_hash = hashlib.sha256(data).hexdigest()
-            if not force and not intent and previous.get('state') == 'completed' and previous.get('destination') == record['destination'] and previous.get('content_hash') == new_hash == old_hash and previous.get('fingerprint') == entry.fingerprint and previous.get('rule_digest') == rule.digest and previous.get('refresh_requested') == settings['refresh_emby']:
+            if not force and not intent and previous.get('state') == 'completed' and previous.get('destination') == record['destination'] and previous.get('content_hash') == new_hash == old_hash and previous.get('fingerprint') == entry.fingerprint and previous.get('rule_digest') == rule_digest and previous.get('refresh_requested') == settings['refresh_emby']:
                 return 'skipped'
             owned = any(item.get('owned') and item.get('destination') == record['destination'] and item.get('content_hash') == old_hash for item in (previous, intent))
             if old_hash is not None and old_hash != new_hash and not owned:
@@ -169,7 +177,7 @@ class Plugin(BasePlugin):
             parent_type = PureWindowsPath if re.match(r'^[A-Za-z]:[\\/]', emby_path) else PurePosixPath
             refresh_path = emby_path if kind == 'video' else str(parent_type(emby_path).parent)
             pending_refresh = dict(path=refresh_path, title=refresh_path, rule_id=rule.id, update_type='Created' if old_hash is None else 'Modified', state='queued', error='')
-            needs_refresh = settings['refresh_emby'] and (changed or force or previous.get('rule_digest') != rule.digest or not previous.get('refresh_requested'))
+            needs_refresh = settings['refresh_emby'] and (changed or force or previous.get('rule_digest') != rule_digest or not previous.get('refresh_requested'))
             record['refresh_requested'] = settings['refresh_emby']
             if needs_refresh: record['pending_refresh'] = pending_refresh
             if changed:
@@ -230,18 +238,31 @@ class Plugin(BasePlugin):
                     if not rules: raise ValidationError('请先添加并启用目录映射')
                     for index, rule in enumerate(rules):
                         await task.progress(.9*index/max(1,len(rules)), f'正在扫描目录：{rule.name}')
-                        try: entries = await self.inventory(rule, task, record)
+                        kinds, rule_digest = self.file_types(settings), rule.digest
+                        last_progress = time.monotonic()
+                        try:
+                            async for entries in self.inventory(rule, task, kinds, record):
+                                keys = [key_for(rule.id, entry.relative) for entry in entries]
+                                previous = await self.ctx.store.get_many('records', keys)
+                                intents = await self.ctx.store.get_many('intents', keys)
+                                for key, entry in zip(keys, entries):
+                                    task.check_cancelled()
+                                    outcome = await self.process(rule, entry, settings, request.force,
+                                        stored=(previous.get(key) or {}, intents.get(key) or {}),
+                                        kinds=kinds, rule_digest=rule_digest)
+                                    if outcome != 'ignored':
+                                        run['checked'] += 1; run[outcome] += 1
+                                    now = time.monotonic()
+                                    if now - last_progress >= .5:
+                                        # The source total is unknown until traversal ends.
+                                        # Keep progress truthful and bound durable writes.
+                                        await task.progress(.9*index/len(rules), f"已检查 {run['checked']}，新增 {run['created']}，更新 {run['updated']}，跳过 {run['skipped']}，失败 {run['failed']}")
+                                        last_progress = now
+                            await task.progress(.9*(index+1)/len(rules), f"已检查 {run['checked']}，新增 {run['created']}，更新 {run['updated']}，跳过 {run['skipped']}，失败 {run['failed']}")
                         except Exception as exc:
                             run['failed'] += 1; run['error'] = f'{rule.name}：{exc}'
                             self.ctx.log.warning('源目录扫描失败，保留已有 STRM 和索引', rule_id=rule.id, error=str(exc))
                             continue
-                        for offset, entry in enumerate(entries):
-                            task.check_cancelled()
-                            outcome = await self.process(rule, entry, settings, request.force)
-                            if outcome != 'ignored':
-                                run['checked'] += 1; run[outcome] += 1
-                            if offset % 20 == 0 or offset+1 == len(entries):
-                                await task.progress(.9*(index+(offset+1)/max(1,len(entries)))/len(rules), f"已检查 {run['checked']}，新增 {run['created']}，更新 {run['updated']}，跳过 {run['skipped']}，失败 {run['failed']}")
                 if settings['refresh_emby'] or request.refresh_only:
                     await task.progress(.95, '正在通知 Emby 刷新已生成的文件')
                     run['refreshed'] = await self.flush_refresh(task)

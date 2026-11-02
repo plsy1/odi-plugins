@@ -1,9 +1,9 @@
 {
   "id": "cloud-strm",
   "name": "云盘 STRM",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api_version": 1,
-  "requires_host": ">=1.2.1,<2",
+  "requires_host": ">=1.2.2,<2",
   "data_version": 1,
   "author": "plsy1",
   "description": "扫描 CD2 等挂载目录，按 Nginx 路径规则生成 STRM，支持配套文件、增量扫描和 Emby 刷新。",
@@ -89,60 +89,6 @@
     "description": "将 CD2 的 115 目录挂载到 Kanojo 后添加映射。源视频保持原样；播放时由现有 Nginx/OpenList 链路取得 115 直链。",
     "sections": [
       {
-        "type": "settings",
-        "title": "扫描与配套文件",
-        "fields": [
-          "auto_scan",
-          "poll_seconds",
-          "scan_on_start",
-          "video_extensions",
-          "copy_subtitles",
-          "copy_nfo",
-          "copy_images",
-          "metadata_max_mb",
-          "refresh_emby"
-        ]
-      },
-      {
-        "type": "table",
-        "id": "rules",
-        "title": "目录映射",
-        "endpoint": "/rules",
-        "columns": [
-          {
-            "key": "name",
-            "label": "名称"
-          },
-          {
-            "key": "source_dir",
-            "label": "源目录"
-          },
-          {
-            "key": "target_dir",
-            "label": "STRM 目录"
-          },
-          {
-            "key": "preview",
-            "label": "STRM 内容示例"
-          }
-        ],
-        "actions": [
-          {
-            "label": "编辑",
-            "fill_form": "mapping"
-          },
-          {
-            "label": "扫描",
-            "endpoint": "/rules/scan"
-          },
-          {
-            "label": "移除",
-            "endpoint": "/rules/remove",
-            "confirm": "移除此目录映射？已生成的 STRM 和源视频都会保留。"
-          }
-        ]
-      },
-      {
         "type": "action",
         "id": "mapping",
         "title": "添加或编辑映射",
@@ -189,14 +135,14 @@
             "label": "STRM 内容前缀或模板",
             "default": "/115",
             "required": true,
-            "description": "填写 Nginx 识别的路径前缀，例如 /115/电影。URL 模式可填 https://openlist.example/d/115/电影；模板支持 {path}、{url_path}、{encoded_path}。"
+            "description": "Nginx 识别的原视频路径前缀，如 /115/电影；URL 或模板模式填写对应规则。"
           },
           {
             "id": "emby_root",
             "type": "string",
             "label": "STRM 输出目录（Emby 内，可留空）",
             "default": "",
-            "description": "仅用于通知 Emby 刷新，例如 /media/电影。留空表示与 Kanojo 的输出目录一致。"
+            "description": "仅用于媒体库刷新，如 /media/电影；留空使用 Kanojo 输出目录。"
           },
           {
             "id": "enabled",
@@ -204,22 +150,122 @@
             "label": "启用此映射",
             "default": true
           }
+        ],
+        "groups": [
+          {
+            "title": "目录位置",
+            "description": "填写 Kanojo 实际可以访问的源目录和输出位置。",
+            "fields": [
+              "name",
+              "source_dir",
+              "target_dir"
+            ],
+            "columns": 1
+          },
+          {
+            "title": "播放与刷新",
+            "description": "STRM 内容对应现有 Nginx / OpenList 播放规则。",
+            "fields": [
+              "mode",
+              "playback_root",
+              "emby_root",
+              "enabled"
+            ],
+            "columns": 1
+          }
         ]
       },
       {
-        "type": "action",
-        "id": "scan",
-        "title": "开始生成",
-        "description": "增量扫描会检查全部目录并跳过未变更文件；源目录不可用时保留已有输出和记录。",
-        "label": "增量扫描",
-        "endpoint": "/scan"
+        "type": "table",
+        "id": "rules",
+        "title": "目录映射",
+        "endpoint": "/rules",
+        "columns": [
+          {
+            "key": "name",
+            "label": "名称"
+          },
+          {
+            "key": "source_dir",
+            "label": "源目录"
+          },
+          {
+            "key": "target_dir",
+            "label": "STRM 目录"
+          },
+          {
+            "key": "preview",
+            "label": "STRM 内容示例"
+          }
+        ],
+        "actions": [
+          {
+            "label": "编辑",
+            "fill_form": "mapping"
+          },
+          {
+            "label": "扫描",
+            "endpoint": "/rules/scan"
+          },
+          {
+            "label": "移除",
+            "endpoint": "/rules/remove",
+            "confirm": "移除此目录映射？已生成的 STRM 和源视频都会保留。"
+          }
+        ]
       },
       {
-        "type": "action",
-        "id": "rebuild",
-        "label": "重新检查全部文件",
-        "endpoint": "/rebuild",
-        "description": "修复缺失 STRM、应用新的路径规则。手工修改或其他程序生成的文件会保留。"
+        "type": "settings",
+        "id": "generation",
+        "title": "扫描与配套文件",
+        "fields": [
+          "auto_scan",
+          "poll_seconds",
+          "scan_on_start",
+          "video_extensions",
+          "copy_subtitles",
+          "copy_nfo",
+          "copy_images",
+          "metadata_max_mb"
+        ],
+        "groups": [
+          {
+            "title": "扫描策略",
+            "fields": [
+              "auto_scan",
+              "scan_on_start",
+              "poll_seconds",
+              "video_extensions"
+            ],
+            "columns": 1
+          },
+          {
+            "title": "配套文件",
+            "fields": [
+              "copy_subtitles",
+              "copy_nfo",
+              "copy_images",
+              "metadata_max_mb"
+            ],
+            "columns": 1
+          }
+        ]
+      },
+      {
+        "type": "actions",
+        "id": "scan",
+        "title": "开始生成",
+        "description": "按目录映射扫描；未变更的文件会跳过，源目录离线时保留已有输出。",
+        "actions": [
+          {
+            "label": "增量扫描",
+            "endpoint": "/scan"
+          },
+          {
+            "label": "重新检查全部文件",
+            "endpoint": "/rebuild"
+          }
+        ]
       },
       {
         "type": "task_status",
@@ -296,6 +342,14 @@
         ]
       },
       {
+        "type": "settings",
+        "id": "emby_settings",
+        "title": "Emby 刷新设置",
+        "fields": [
+          "refresh_emby"
+        ]
+      },
+      {
         "type": "action",
         "id": "refresh",
         "title": "Emby 刷新重试",
@@ -321,6 +375,43 @@
             "key": "error",
             "label": "详情"
           }
+        ]
+      }
+    ],
+    "tabs": [
+      {
+        "id": "mapping",
+        "label": "目录映射",
+        "description": "先保存目录映射，再到「生成与记录」开始生成。",
+        "sections": [
+          "mapping",
+          "rules"
+        ]
+      },
+      {
+        "id": "settings",
+        "label": "生成设置",
+        "sections": [
+          "generation"
+        ]
+      },
+      {
+        "id": "activity",
+        "label": "生成与记录",
+        "sections": [
+          "scan",
+          "tasks",
+          "records",
+          "runs"
+        ]
+      },
+      {
+        "id": "emby",
+        "label": "Emby 刷新",
+        "sections": [
+          "emby_settings",
+          "refresh",
+          "pending"
         ]
       }
     ]

@@ -20,24 +20,53 @@ class Entry:
     def fingerprint(self): return f'{self.size}:{self.modified}'
 
 
-def list_folder(root: str, relative: str):
+MAX_FOLDER_ITEMS = 100_000
+MAX_SCAN_ITEMS = 200_000
+SCAN_BATCH_SIZE = 100
+
+
+def source_folder(root: str, relative: str):
     base = Path(root)
     folder = base / relative if relative else base
     if folder.is_symlink() or not folder.resolve().is_relative_to(base.resolve()):
         raise ValueError('跳过源目录外的符号链接')
-    folders, entries = [], []
+    return folder
+
+
+def list_folder(root: str, relative: str, extensions):
+    folder = source_folder(root, relative)
+    folders, names, examined = [], [], 0
     with os.scandir(folder) as iterator:
         for item in iterator:
+            examined += 1
+            if examined > MAX_FOLDER_ITEMS:
+                raise ValueError('单个目录超过 100000 项，请拆分目录映射')
             if item.name.startswith('.') or item.name in SKIP_DIRS or item.is_symlink(): continue
             name = '/'.join(filter(None, (relative, item.name)))
             clean_relative(name)
-            if item.is_dir(follow_symlinks=False): folders.append(name)
-            elif item.is_file(follow_symlinks=False):
-                info = item.stat(follow_symlinks=False)
-                entries.append(Entry(name, info.st_size, info.st_mtime_ns))
-            if len(folders) + len(entries) > 100000:
-                raise ValueError('单个目录超过 100000 项，请拆分目录映射')
-    return sorted(folders), sorted(entries, key=lambda entry: entry.relative)
+            if item.is_dir(follow_symlinks=False):
+                folders.append(name)
+            elif PurePosixPath(item.name).suffix.casefold() in extensions and item.is_file(follow_symlinks=False):
+                # Keep only names here. Unused files never need size/mtime, and
+                # metadata is read in small batches just before processing.
+                names.append(name)
+    return sorted(folders), sorted(names), examined
+
+
+def stat_batch(root: str, names):
+    if not names: return []
+    parent = str(PurePosixPath(names[0]).parent)
+    folder = source_folder(root, '' if parent == '.' else parent)
+    entries = []
+    for name in names:
+        path = PurePosixPath(clean_relative(name))
+        if str(path.parent) != parent:
+            raise ValueError('扫描批次包含不同目录')
+        info = (folder / path.name).lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError('源文件不是普通文件')
+        entries.append(Entry(name, info.st_size, info.st_mtime_ns))
+    return entries
 
 
 def output_path(root: str, relative: str):
